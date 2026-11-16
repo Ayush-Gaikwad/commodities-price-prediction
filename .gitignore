@@ -8,3 +8,6 @@ venv/
 .env
 .env.local
 *.log
+
+.venv_ml/
+.venv_flash/

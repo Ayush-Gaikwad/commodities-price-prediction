@@ -1,491 +1,198 @@
 
-# ============================================================
-# PHASE 5: MACHINE LEARNING MODEL DEVELOPMENT
-# ============================================================
-
-import os
-
-import joblib
-import numpy as np
+import json
 import pandas as pd
+import numpy as np
+from pathlib import Path
+import joblib
 
-from sklearn.linear_model import LinearRegression
-
+from sklearn.linear_model import LinearRegression, Ridge, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from sklearn.metrics import mean_squared_error
 
 from xgboost import XGBRegressor
 
+# --------------------------------------------------
+# PATHS
+# --------------------------------------------------
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+DATA_FILE = Path("data/processed/sugar_features.csv")
+MODEL_DIR = Path("models")
+RESULT_DIR = Path("results")
 
-DATA_PATH = "data/processed/sugar_features.csv"
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
+RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL_DIR = "models"
-
-RESULTS_DIR = "results"
-
-TEST_SIZE = 0.20
-
-
-# ============================================================
+# --------------------------------------------------
 # LOAD DATA
-# ============================================================
+# --------------------------------------------------
 
-def load_data():
+df = pd.read_csv(DATA_FILE)
+df["date"] = pd.to_datetime(df["date"])
+df = df.sort_values("date").reset_index(drop=True)
 
-    print("Loading engineered dataset...")
+FEATURES = [
+    "daily_return",
+    "return_lag_1",
+    "return_lag_2",
+    "return_lag_3",
+    "return_lag_5",
+    "return_lag_10",
+    "ma_ratio_5",
+    "ma_ratio_20",
+    "volatility_5",
+    "volatility_20",
+    "volume_change"
+]
 
-    data = pd.read_csv(DATA_PATH)
+X = df[FEATURES]
+y = df["target"]
 
-    data["date"] = pd.to_datetime(
-        data["date"]
-    )
-
-    data["target_date"] = pd.to_datetime(
-        data["target_date"]
-    )
-
-    data = data.sort_values(
-        "date"
-    ).reset_index(drop=True)
-
-    print("Dataset shape:", data.shape)
-
-    return data
-
-
-# ============================================================
-# SELECT FEATURES
-# ============================================================
-
-def select_features(data):
-
-    feature_columns = [
-
-        "open",
-        "high",
-        "low",
-        "close",
-
-        "close_lag_1",
-        "close_lag_2",
-        "close_lag_3",
-        "close_lag_5",
-        "close_lag_10",
-
-        "ma_5",
-        "ma_10",
-        "ma_20",
-        "ma_50",
-
-        "return_1",
-        "return_5",
-
-        "volatility_10",
-        "volatility_20",
-
-        "high_low_diff",
-        "open_close_diff"
-
-    ]
-
-    # Include volume if it exists in the dataset.
-    if "volume" in data.columns:
-
-        feature_columns.append(
-            "volume"
-        )
-
-    # Keep only features that exist.
-    feature_columns = [
-
-        column
-
-        for column in feature_columns
-
-        if column in data.columns
-
-    ]
-
-    X = data[
-        feature_columns
-    ].copy()
-
-    y = data[
-        "target"
-    ].copy()
-
-    print("\nSelected features:")
-
-    print(feature_columns)
-
-    print("\nNumber of features:")
-
-    print(len(feature_columns))
-
-    return X, y, feature_columns
-
-
-# ============================================================
+# --------------------------------------------------
 # CHRONOLOGICAL TRAIN-TEST SPLIT
-# ============================================================
+# --------------------------------------------------
 
-def split_data(X, y, data):
+split_index = int(len(df) * 0.80)
 
-    print("\nPerforming chronological split...")
+X_train = X.iloc[:split_index]
+X_test = X.iloc[split_index:]
 
-    split_index = int(
-        len(data) * (1 - TEST_SIZE)
-    )
+y_train = y.iloc[:split_index]
+y_test = y.iloc[split_index:]
 
-    X_train = X.iloc[
-        :split_index
-    ]
+train_dates = df["date"].iloc[:split_index]
+test_dates = df["date"].iloc[split_index:]
 
-    X_test = X.iloc[
-        split_index:
-    ]
+print("=" * 65)
+print("11-FEATURE MODEL TRAINING")
+print("=" * 65)
 
-    y_train = y.iloc[
-        :split_index
-    ]
+print(f"Total observations: {len(df)}")
+print(f"Training observations: {len(X_train)}")
+print(f"Testing observations: {len(X_test)}")
+print(f"Number of features: {len(FEATURES)}")
+print(f"Training period: {train_dates.min()} to {train_dates.max()}")
+print(f"Testing period: {test_dates.min()} to {test_dates.max()}")
 
-    y_test = y.iloc[
-        split_index:
-    ]
+# Save feature names
+with open(MODEL_DIR / "feature_columns.json", "w") as f:
+    json.dump(FEATURES, f, indent=4)
 
-    train_dates = data[
-        "date"
-    ].iloc[:split_index]
+# --------------------------------------------------
+# MODEL DEFINITIONS
+# --------------------------------------------------
 
-    test_dates = data[
-        "target_date"
-    ].iloc[split_index:]
+tscv = TimeSeriesSplit(n_splits=5)
 
-    print(
-        f"Training observations: {len(X_train)}"
-    )
+models = {
+    "Linear Regression": LinearRegression(),
 
-    print(
-        f"Testing observations: {len(X_test)}"
-    )
+    "Ridge Regression": GridSearchCV(
+        Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", Ridge())
+        ]),
+        {
+            "model__alpha": [0.01, 0.1, 1, 10, 100]
+        },
+        cv=tscv,
+        scoring="neg_root_mean_squared_error",
+        n_jobs=1
+    ),
 
-    print(
-        "\nTraining period:"
-    )
+    "ElasticNet": GridSearchCV(
+        Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", ElasticNet(max_iter=20000))
+        ]),
+        {
+            "model__alpha": [0.001, 0.01, 0.1, 1],
+            "model__l1_ratio": [0.2, 0.5, 0.8, 1.0]
+        },
+        cv=tscv,
+        scoring="neg_root_mean_squared_error",
+        n_jobs=1
+    ),
 
-    print(
-        train_dates.min(),
-        "to",
-        train_dates.max()
-    )
-
-    print(
-        "\nTesting target period:"
-    )
-
-    print(
-        test_dates.min(),
-        "to",
-        test_dates.max()
-    )
-
-    return (
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        test_dates
-    )
-
-
-# ============================================================
-# TRAIN MODELS
-# ============================================================
-
-def train_models(
-    X_train,
-    y_train,
-    X_test
-):
-
-    print("\nTraining Linear Regression...")
-
-    linear_model = LinearRegression()
-
-    linear_model.fit(
-        X_train,
-        y_train
-    )
-
-    linear_predictions = linear_model.predict(
-        X_test
-    )
-
-    print("Linear Regression completed.")
-
-    # --------------------------------------------------------
-    # RANDOM FOREST
-    # --------------------------------------------------------
-
-    print("\nTraining Random Forest...")
-
-    random_forest_model = RandomForestRegressor(
-
+    "Random Forest": RandomForestRegressor(
         n_estimators=300,
-
         max_depth=12,
-
         min_samples_split=5,
-
         min_samples_leaf=2,
-
         random_state=42,
+        n_jobs=1
+    ),
 
-        n_jobs=-1
-
-    )
-
-    random_forest_model.fit(
-        X_train,
-        y_train
-    )
-
-    random_forest_predictions = (
-        random_forest_model.predict(
-            X_test
-        )
-    )
-
-    print("Random Forest completed.")
-
-    # --------------------------------------------------------
-    # XGBOOST
-    # --------------------------------------------------------
-
-    print("\nTraining XGBoost...")
-
-    xgboost_model = XGBRegressor(
-
+    "XGBoost": XGBRegressor(
         n_estimators=500,
-
         learning_rate=0.03,
-
         max_depth=4,
-
-        min_child_weight=3,
-
         subsample=0.8,
-
         colsample_bytree=0.8,
-
-        reg_lambda=1.0,
-
         objective="reg:squarederror",
-
-        eval_metric="rmse",
-
         random_state=42,
-
-        n_jobs=-1
-
+        n_jobs=1
     )
+}
 
-    xgboost_model.fit(
-        X_train,
-        y_train
-    )
+# --------------------------------------------------
+# TRAIN AND SAVE MODELS
+# --------------------------------------------------
 
-    xgboost_predictions = (
-        xgboost_model.predict(
-            X_test
-        )
-    )
+predictions = pd.DataFrame({
+    "date": test_dates.reset_index(drop=True),
+    "actual": y_test.reset_index(drop=True)
+})
 
-    print("XGBoost completed.")
+for name, model in models.items():
 
-    # --------------------------------------------------------
-    # STORE MODELS AND PREDICTIONS
-    # --------------------------------------------------------
+    print("\n" + "-" * 65)
+    print(f"Training {name}...")
+    
+    model.fit(X_train, y_train)
 
-    models = {
-
-        "Linear Regression": linear_model,
-
-        "Random Forest": random_forest_model,
-
-        "XGBoost": xgboost_model
-
-    }
-
-    predictions = {
-
-        "Linear Regression": (
-            linear_predictions
-        ),
-
-        "Random Forest": (
-            random_forest_predictions
-        ),
-
-        "XGBoost": (
-            xgboost_predictions
-        )
-
-    }
-
-    return models, predictions
-
-
-# ============================================================
-# SAVE MODELS
-# ============================================================
-
-def save_models(models):
-
-    os.makedirs(
-        MODEL_DIR,
-        exist_ok=True
-    )
-
-    for name, model in models.items():
-
-        filename = (
-            name.lower()
-            .replace(" ", "_")
-            + ".pkl"
-        )
-
-        path = os.path.join(
-            MODEL_DIR,
-            filename
-        )
-
-        joblib.dump(
-            model,
-            path
-        )
-
+    if isinstance(model, GridSearchCV):
+        print(f"Best parameters: {model.best_params_}")
         print(
-            f"Saved {name} to {path}"
+            f"Best CV RMSE: "
+            f"{-model.best_score_:.6f}"
         )
 
+    y_pred = model.predict(X_test)
 
-# ============================================================
+    column_name = (
+        name.lower()
+        .replace(" ", "_")
+    ) + "_prediction"
+
+    predictions[column_name] = y_pred
+
+    model_filename = (
+        name.lower()
+        .replace(" ", "_")
+        + ".pkl"
+    )
+
+    joblib.dump(model, MODEL_DIR / model_filename)
+
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+    print(f"Test RMSE: {rmse:.6f}")
+    print(f"Saved model: {MODEL_DIR / model_filename}")
+
+# --------------------------------------------------
 # SAVE PREDICTIONS
-# ============================================================
+# --------------------------------------------------
 
-def save_predictions(
-    y_test,
-    predictions,
-    test_dates
-):
+predictions.to_csv(
+    RESULT_DIR / "predictions.csv",
+    index=False
+)
 
-    os.makedirs(
-        RESULTS_DIR,
-        exist_ok=True
-    )
-
-    results = pd.DataFrame({
-
-        "target_date": (
-            test_dates.to_numpy()
-        ),
-
-        "actual": (
-            y_test.to_numpy()
-        )
-
-    })
-
-    for name, values in predictions.items():
-
-        column_name = (
-
-            name.lower()
-            .replace(" ", "_")
-            + "_prediction"
-
-        )
-
-        results[column_name] = values
-
-    results.to_csv(
-
-        f"{RESULTS_DIR}/predictions.csv",
-
-        index=False
-
-    )
-
-    print(
-        "\nPredictions saved to results/predictions.csv"
-    )
-
-
-# ============================================================
-# MAIN FUNCTION
-# ============================================================
-
-def main():
-
-    print("=" * 60)
-
-    print(
-        "PHASE 5: MACHINE LEARNING MODEL DEVELOPMENT"
-    )
-
-    print("=" * 60)
-
-    data = load_data()
-
-    X, y, feature_columns = (
-        select_features(data)
-    )
-
-    (
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        test_dates
-    ) = split_data(
-        X,
-        y,
-        data
-    )
-
-    models, predictions = train_models(
-
-        X_train,
-
-        y_train,
-
-        X_test
-
-    )
-
-    save_models(
-        models
-    )
-
-    save_predictions(
-
-        y_test,
-
-        predictions,
-
-        test_dates
-
-    )
-
-    print(
-        "\nAll models trained successfully."
-    )
-
-
-if __name__ == "__main__":
-
-    main()
+print("\n" + "=" * 65)
+print("MODEL TRAINING COMPLETED")
+print("=" * 65)
+print(f"Predictions saved to: {RESULT_DIR / 'predictions.csv'}")
+print(f"Models saved to: {MODEL_DIR}")

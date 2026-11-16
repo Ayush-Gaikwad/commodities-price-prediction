@@ -1,0 +1,34 @@
+Model,Feature,Coefficient,Absolute Coefficient
+Linear Regression,daily_return,3.072537376946983,3.072537376946983
+Linear Regression,return_lag_1,2.264997861235458,2.264997861235458
+Linear Regression,return_lag_2,1.5295833354821664,1.5295833354821664
+Linear Regression,return_lag_3,0.7382807346425796,0.7382807346425796
+Linear Regression,return_lag_5,0.009975833899445712,0.009975833899445712
+Linear Regression,return_lag_10,0.017300076819418655,0.017300076819418655
+Linear Regression,ma_ratio_5,-3.8065016482484197,3.8065016482484197
+Linear Regression,ma_ratio_20,0.00036762505563015365,0.00036762505563015365
+Linear Regression,volatility_5,-0.033960073832437515,0.033960073832437515
+Linear Regression,volatility_20,0.07570538646567421,0.07570538646567421
+Linear Regression,volume_change,-0.000497559820137017,0.000497559820137017
+Ridge Regression,daily_return,0.049118347330420316,0.049118347330420316
+Ridge Regression,return_lag_1,-0.03087336414741232,0.03087336414741232
+Ridge Regression,return_lag_2,0.016011815562256254,0.016011815562256254
+Ridge Regression,return_lag_3,-0.03725560954773703,0.03725560954773703
+Ridge Regression,return_lag_5,0.015051742908893136,0.015051742908893136
+Ridge Regression,return_lag_10,0.03281557459533199,0.03281557459533199
+Ridge Regression,ma_ratio_5,-0.0015239724105482963,0.0015239724105482963
+Ridge Regression,ma_ratio_20,0.00024461698021705636,0.00024461698021705636
+Ridge Regression,volatility_5,0.06720181020932794,0.06720181020932794
+Ridge Regression,volatility_20,0.03630945628828089,0.03630945628828089
+Ridge Regression,volume_change,-0.0349385826063041,0.0349385826063041
+ElasticNet,daily_return,0.0,0.0
+ElasticNet,return_lag_1,0.0,0.0
+ElasticNet,return_lag_2,0.0,0.0
+ElasticNet,return_lag_3,0.0,0.0
+ElasticNet,return_lag_5,0.0,0.0
+ElasticNet,return_lag_10,0.0,0.0
+ElasticNet,ma_ratio_5,0.0,0.0
+ElasticNet,ma_ratio_20,0.0,0.0
+ElasticNet,volatility_5,0.0,0.0
+ElasticNet,volatility_20,0.0,0.0
+ElasticNet,volume_change,0.0,0.0

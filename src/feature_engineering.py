@@ -1,241 +1,83 @@
 
-# ============================================================
-# PHASE 4: FEATURE ENGINEERING
-# Commodities Price Prediction Using Machine Learning Regression
-# ============================================================
-
-import os
 import pandas as pd
-import numpy as np
+from pathlib import Path
 
+INPUT_FILE = Path("data/processed/sugar_prices.csv")
+OUTPUT_FILE = Path("data/processed/sugar_features.csv")
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+# Load dataset
+df = pd.read_csv(INPUT_FILE)
 
-INPUT_PATH = "data/processed/sugar_prices.csv"
+# Standardize column names
+df.columns = df.columns.str.strip().str.lower()
 
-OUTPUT_PATH = "data/processed/sugar_features.csv"
+df["date"] = pd.to_datetime(df["date"])
+df = df.sort_values("date").reset_index(drop=True)
 
+# Daily percentage return
+df["daily_return"] = df["close"].pct_change() * 100
 
-# ============================================================
-# LOAD DATA
-# ============================================================
+# Lagged returns
+for lag in [1, 2, 3, 5, 10]:
+    df[f"return_lag_{lag}"] = df["daily_return"].shift(lag)
 
-def load_data():
+# Moving-average ratios
+for window in [5, 20]:
+    moving_average = df["close"].rolling(window=window).mean()
+    df[f"ma_ratio_{window}"] = (
+        (df["close"] / moving_average) - 1
+    ) * 100
 
-    print("Loading commodity price dataset...")
-
-    if not os.path.exists(INPUT_PATH):
-
-        raise FileNotFoundError(
-            f"Dataset not found: {INPUT_PATH}"
-        )
-
-    data = pd.read_csv(INPUT_PATH)
-
-    data["date"] = pd.to_datetime(data["date"])
-
-    data = data.sort_values("date")
-
-    data = data.drop_duplicates(
-        subset=["date"]
+# Rolling volatility
+for window in [5, 20]:
+    df[f"volatility_{window}"] = (
+        df["daily_return"].rolling(window=window).std()
     )
 
-    data = data.reset_index(drop=True)
-
-    required_columns = [
-        "date",
-        "open",
-        "high",
-        "low",
-        "close"
-    ]
-
-    for column in required_columns:
-
-        if column not in data.columns:
-
-            raise ValueError(
-                f"Required column missing: {column}"
-            )
-
-    print("Dataset loaded:", data.shape)
-
-    return data
-
-
-# ============================================================
-# FEATURE ENGINEERING
-# ============================================================
-
-def create_features(data):
-
-    print("\nCreating lag features...")
-
-    data = data.copy()
-
-    # --------------------------------------------------------
-    # LAG FEATURES
-    # --------------------------------------------------------
-
-    for lag in [1, 2, 3, 5, 10]:
-
-        data[f"close_lag_{lag}"] = (
-            data["close"].shift(lag)
-        )
-
-    # --------------------------------------------------------
-    # MOVING AVERAGES
-    # --------------------------------------------------------
-
-    for window in [5, 10, 20, 50]:
-
-        data[f"ma_{window}"] = (
-            data["close"]
-            .rolling(window=window)
-            .mean()
-        )
-
-    # --------------------------------------------------------
-    # DAILY RETURNS
-    # --------------------------------------------------------
-
-    data["return_1"] = (
-        data["close"].pct_change()
-    )
-
-    data["return_5"] = (
-        data["close"].pct_change(periods=5)
-    )
-
-    # --------------------------------------------------------
-    # ROLLING VOLATILITY
-    # --------------------------------------------------------
-
-    data["volatility_10"] = (
-        data["close"]
-        .pct_change()
-        .rolling(window=10)
-        .std()
-    )
-
-    data["volatility_20"] = (
-        data["close"]
-        .pct_change()
-        .rolling(window=20)
-        .std()
-    )
-
-    # --------------------------------------------------------
-    # PRICE DIFFERENCES
-    # --------------------------------------------------------
-
-    data["high_low_diff"] = (
-        data["high"] - data["low"]
-    )
-
-    data["open_close_diff"] = (
-        data["close"] - data["open"]
-    )
-
-    # --------------------------------------------------------
-    # TARGET VARIABLE
-    # --------------------------------------------------------
-
-    # Predict the next trading day's closing price.
-    data["target"] = (
-        data["close"].shift(-1)
-    )
-
-    # Store the date corresponding to the target.
-    data["target_date"] = (
-        data["date"].shift(-1)
-    )
-
-    return data
-
-
-# ============================================================
-# CLEAN FEATURE DATASET
-# ============================================================
-
-def clean_feature_data(data):
-
-    print("\nCleaning feature dataset...")
-
-    data = data.copy()
-
-    # Remove rows containing missing feature values.
-    # Initial rows are missing due to lag and rolling windows.
-    # Final row is missing because the next-day target is unknown.
-
-    data = data.dropna()
-
-    # Remove infinite values.
-    data = data.replace(
-        [np.inf, -np.inf],
-        np.nan
-    )
-
-    data = data.dropna()
-
-    data = data.reset_index(drop=True)
-
-    return data
-
-
-# ============================================================
-# MAIN FUNCTION
-# ============================================================
-
-def main():
-
-    print("=" * 60)
-
-    print("PHASE 4: FEATURE ENGINEERING")
-
-    print("=" * 60)
-
-    data = load_data()
-
-    data = create_features(data)
-
-    data = clean_feature_data(data)
-
-    os.makedirs(
-        "data/processed",
-        exist_ok=True
-    )
-
-    data.to_csv(
-        OUTPUT_PATH,
-        index=False
-    )
-
-    print("\nFeature engineering completed.")
-
-    print("\nFinal dataset shape:")
-
-    print(data.shape)
-
-    print("\nFeature columns:")
-
-    print(data.columns.tolist())
-
-    print("\nFirst 5 rows:")
-
-    print(data.head())
-
-    print("\nMissing values:")
-
-    print(data.isnull().sum())
-
-    print(
-        f"\nDataset saved to: {OUTPUT_PATH}"
-    )
-
-
-if __name__ == "__main__":
-
-    main()
+# Volume change
+df["volume_change"] = df["volume"].pct_change() * 100
+
+# Next-day percentage return (target)
+df["target"] = (
+    (df["close"].shift(-1) - df["close"]) / df["close"]
+) * 100
+
+# Selected 11 features
+FEATURES = [
+    "daily_return",
+    "return_lag_1",
+    "return_lag_2",
+    "return_lag_3",
+    "return_lag_5",
+    "return_lag_10",
+    "ma_ratio_5",
+    "ma_ratio_20",
+    "volatility_5",
+    "volatility_20",
+    "volume_change"
+]
+
+# Keep only required columns
+df = df[["date"] + FEATURES + ["target"]]
+
+# Remove invalid values
+df = df.replace([float("inf"), float("-inf")], pd.NA)
+df = df.dropna().reset_index(drop=True)
+
+# Save dataset
+OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+df.to_csv(OUTPUT_FILE, index=False)
+
+print("=" * 60)
+print("FEATURE ENGINEERING COMPLETED")
+print("=" * 60)
+print(f"Dataset shape: {df.shape}")
+print(f"Number of features: {len(FEATURES)}")
+print(f"Features: {FEATURES}")
+print(f"Missing values: {df.isnull().sum().sum()}")
+print(f"Date range: {df['date'].min()} to {df['date'].max()}")
+
+print("\nTarget statistics:")
+print(df["target"].describe())
+
+print(f"\nSaved to: {OUTPUT_FILE}")
